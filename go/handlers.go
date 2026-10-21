@@ -80,7 +80,7 @@ func makeDiagnostic(t *ReviewThread) Diagnostic {
 			End:   Position{Line: line, Character: 1000},
 		},
 		Message:  makeThreadMessage(t),
-		Severity: SeverityError,
+		Severity: SeverityInformation,
 		Source:   source,
 		Data:     &raw,
 	}

@@ -81,6 +81,26 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 `
 
 func (g *GitHubAPI) FindPR(owner, repo, branch string) (int, string, bool) {
+	prenv := os.Getenv("GH_PR")
+	if prenv != "" {
+		log.Printf("loading pr from $GH_ENV: %s", prenv)
+		out, err := runGH([]string{
+			"pr", "view", prenv,
+			"--repo", fmt.Sprintf("%s/%s", owner, repo),
+			"--json", "number,headRefOid",
+		})
+		if err != nil || out == "" {
+			return 0, "", false
+		}
+		var pr struct {
+			Number     int    `json:"number"`
+			HeadRefOid string `json:"headRefOid"`
+		}
+		if err := json.Unmarshal([]byte(out), &pr); err != nil {
+			return 0, "", false
+		}
+		return pr.Number, pr.HeadRefOid, true
+	}
 	out, err := runGH([]string{
 		"pr", "list",
 		"--repo", fmt.Sprintf("%s/%s", owner, repo),
