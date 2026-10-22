@@ -34,6 +34,7 @@ type GitHub interface {
 	ResolveThread(threadID string) bool
 	ReplyToComment(owner, repo string, pr, commentID int, body string) bool
 	CreateReviewComment(owner, repo string, pr int, commitID, path string, line int, body string) bool
+	CreateReviewThread(owner, repo string, pr int, path string, line int, body string) bool
 }
 
 // --- gh CLI helper ---
@@ -242,6 +243,57 @@ func (g *GitHubAPI) CreateReviewComment(owner, repo string, pr int, commitID, pa
 	return true
 }
 
+func (g *GitHubAPI) CreateReviewThread(owner, repo string, pr int, path string, line int, body string) bool {
+	query := `query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) { id }
+  }
+}`
+	result, err := runGH([]string{
+		"api", "graphql",
+		"-f", fmt.Sprintf("owner=%s", owner),
+		"-f", fmt.Sprintf("repo=%s", repo),
+		"-F", fmt.Sprintf("pr=%d", pr),
+		"-f", fmt.Sprintf("query=%s", query),
+	})
+	if err != nil {
+		return false
+	}
+	var response struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ID string `json:"id"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(result), &response); err != nil || response.Data.Repository.PullRequest.ID == "" {
+		log.Printf("failed to get pull request ID for review thread")
+		return false
+	}
+
+	mutation := `mutation($body: String!, $pullRequestId: ID!, $path: String!, $line: Int!, $side: DiffSide = RIGHT, $subjectType: PullRequestReviewThreadSubjectType = LINE) {
+  addPullRequestReviewThread(input: {
+    body: $body,
+    pullRequestId: $pullRequestId,
+    path: $path,
+    line: $line,
+    side: $side,
+    subjectType: $subjectType
+  }) { thread { id } }
+}`
+	_, err = runGH([]string{
+		"api", "graphql",
+		"-f", fmt.Sprintf("body=%s", body),
+		"-f", fmt.Sprintf("pullRequestId=%s", response.Data.Repository.PullRequest.ID),
+		"-f", fmt.Sprintf("path=%s", path),
+		"-F", fmt.Sprintf("line=%d", line),
+		"-f", fmt.Sprintf("query=%s", mutation),
+	})
+	return err == nil
+}
+
 // --- MockGitHub (test double) ---
 
 type MockGitHub struct {
@@ -305,4 +357,8 @@ func (m *MockGitHub) CreateReviewComment(owner, repo string, pr int, commitID, p
 		Comments:   []ReviewComment{{DatabaseID: rand.Intn(1000) + 9000, Body: body, Author: "you"}},
 	})
 	return true
+}
+
+func (m *MockGitHub) CreateReviewThread(owner, repo string, pr int, path string, line int, body string) bool {
+	return m.CreateReviewComment(owner, repo, pr, "", path, line, body)
 }

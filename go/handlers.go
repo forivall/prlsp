@@ -464,6 +464,9 @@ func (s *Server) cmdCreateComment(args []json.RawMessage) {
 
 	rel := s.uriToRelpath(uri)
 	ok := s.gh.CreateReviewComment(info.Owner, info.Repo, s.prNumber, s.headSHA, rel, line, body)
+	if !ok {
+		ok = s.gh.CreateReviewThread(info.Owner, info.Repo, s.prNumber, rel, line, body)
+	}
 	if ok {
 		s.refreshThreads()
 		s.publishFileDiagnostics(uri)
